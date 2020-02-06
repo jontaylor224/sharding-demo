@@ -146,7 +146,51 @@ class ShardHandler(object):
         """Loads the data from all shards, removes the extra 'database' file,
         and writes the new number of shards to disk.
         """
-        pass
+        self.mapping = self.load_map()
+        data = self.load_data_from_shards()
+        keys = [int(z) for z in self.get_shard_ids()]
+        if len(keys) == 1:
+            raise Exception('Cannot remove last shard.')
+
+        new_shard_num = max(keys)
+
+        spliced_data = self._generate_sharded_data(new_shard_num, data)
+
+        files = os.listdir('./data')
+
+        for filename in files:
+            if '-' in filename:
+                file_shard = filename.split('-')[0]
+            else:
+                file_shard = filename.split('.')[0]
+            if str(new_shard_num) == file_shard:
+                os.remove(f'./data/{filename}')
+                map_shard = filename.split('.')[0]
+                self.mapping.pop(map_shard)
+
+        for num, d in enumerate(spliced_data):
+            self._write_shard(num, d)
+
+        self.write_map()
+
+
+    def get_highest_replication_level(self) -> int:
+        """Determine highest level of replication or return 0 if none
+        """
+        levels = set()
+        files = os.listdir('./data')
+
+        for filename in files:
+            if '-' in filename:
+                key = filename.split('.')[0]
+                level = int(key.split('-')[1])
+                levels.add(level)
+        if levels:
+            max_level = max(levels)
+        else:
+            max_level = 0
+        return max_level
+
 
     def add_replication(self) -> None:
         """Add a level of replication so that each shard has a backup. Label
@@ -163,7 +207,22 @@ class ShardHandler(object):
         to detect how many levels there are and appropriately add the next
         level.
         """
-        pass
+        self.mapping = self.load_map()
+        next_repl_lvl = self.get_highest_replication_level() + 1
+
+        shards = self.get_shard_ids()
+
+        for key in shards:
+            primary_file = f'data/{key}.txt'
+            replication_file = f'data/{key}-{next_repl_lvl}.txt'
+            copyfile(primary_file, replication_file)
+
+
+        for i, shard in enumerate(shards):
+            self.mapping[f'{i}-{next_repl_lvl}'] = self.mapping[shard]
+
+        self.write_map()
+
 
     def remove_replication(self) -> None:
         """Remove the highest replication level.
@@ -186,7 +245,24 @@ class ShardHandler(object):
         2.txt (shard 2, primary)
         etc...
         """
-        pass
+        self.mapping = self.load_map()
+
+        max_level = self.get_highest_replication_level()
+
+        if max_level == 0:
+            raise Exception('No replications left to remove.')
+
+        files = os.listdir('./data')
+
+        for filename in files:
+            if '-' in filename:
+                key = filename.split('.')[0]
+                repl = key.split('-')[1]
+                if repl == str(max_level):
+                    os.remove(f'./data/{filename}')
+                    self.mapping.pop(key)
+
+
 
     def sync_replication(self) -> None:
         """Verify that all replications are equal to their primaries and that
