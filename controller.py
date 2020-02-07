@@ -268,7 +268,45 @@ class ShardHandler(object):
         """Verify that all replications are equal to their primaries and that
         any missing primaries are appropriately recreated from their
         replications."""
-        pass
+        self.mapping = self.load_map()
+        files = os.listdir('./data')
+        primary_file_keys = []
+        repl_file_keys = []
+        primary_map_keys = []
+        repl_map_keys = []
+        for filename in files:
+            if '-' in filename:
+                repl_file_keys.append(filename.split('.')[0])
+            else:
+                primary_file_keys.append(filename.split('.')[0])
+
+        for key in self.mapping.keys():
+            if '-' in key:
+                repl_map_keys.append(key)
+            else:
+                primary_map_keys.append(key)
+
+        for key in primary_map_keys:
+            if key not in primary_file_keys:
+                print(f'Missing file {key}.txt.')
+                for repl_key in repl_file_keys:
+                    if repl_key.startswith(key):
+                        with open(f'./data/{repl_key}.txt', 'r') as src:
+                            data = src.read()
+                            with open(f'./data/{key}.txt', 'w') as dest:
+                                dest.write(data)
+                        print(f'Restored {key}.txt from {repl_key}.txt.')
+                        break
+
+        highest_repl = self.get_highest_replication_level()
+        if highest_repl:
+            for i in range(1, highest_repl +1):
+                for key in primary_map_keys:
+                    copyfile(f'./data/{key}.txt', f'./data/{key}-{i}.txt')
+                    self.mapping[f'{key}-{i}'] = self.mapping[f'{key}']
+
+        self.write_map()
+
 
     def get_shard_data(self, shardnum=None) -> [str, Dict]:
         """Return information about a shard from the mapfile."""
@@ -282,6 +320,9 @@ class ShardHandler(object):
     def get_all_shard_data(self) -> Dict:
         """A helper function to view the mapping data."""
         return self.mapping
+
+
+
 
 
 s = ShardHandler()
