@@ -108,7 +108,8 @@ class ShardHandler(object):
         """Split the data into as many pieces as needed."""
         splicenum, rem = divmod(len(data), count)
 
-        result = [data[splicenum * z:splicenum * (z + 1)] for z in range(count)]
+        result = [data[splicenum * z:splicenum *
+                       (z + 1)] for z in range(count)]
         # take care of any odd characters
         if rem > 0:
             result[-1] += data[-rem:]
@@ -173,7 +174,6 @@ class ShardHandler(object):
 
         self.write_map()
 
-
     def get_highest_replication_level(self) -> int:
         """Determine highest level of replication or return 0 if none
         """
@@ -190,7 +190,6 @@ class ShardHandler(object):
         else:
             max_level = 0
         return max_level
-
 
     def add_replication(self) -> None:
         """Add a level of replication so that each shard has a backup. Label
@@ -217,12 +216,10 @@ class ShardHandler(object):
             replication_file = f'data/{key}-{next_repl_lvl}.txt'
             copyfile(primary_file, replication_file)
 
-
         for i, shard in enumerate(shards):
             self.mapping[f'{i}-{next_repl_lvl}'] = self.mapping[shard]
 
         self.write_map()
-
 
     def remove_replication(self) -> None:
         """Remove the highest replication level.
@@ -262,8 +259,6 @@ class ShardHandler(object):
                     os.remove(f'./data/{filename}')
                     self.mapping.pop(key)
 
-
-
     def sync_replication(self) -> None:
         """Verify that all replications are equal to their primaries and that
         any missing primaries are appropriately recreated from their
@@ -300,13 +295,12 @@ class ShardHandler(object):
 
         highest_repl = self.get_highest_replication_level()
         if highest_repl:
-            for i in range(1, highest_repl +1):
+            for i in range(1, highest_repl + 1):
                 for key in primary_map_keys:
                     copyfile(f'./data/{key}.txt', f'./data/{key}-{i}.txt')
                     self.mapping[f'{key}-{i}'] = self.mapping[f'{key}']
 
         self.write_map()
-
 
     def get_shard_data(self, shardnum=None) -> [str, Dict]:
         """Return information about a shard from the mapfile."""
@@ -321,8 +315,51 @@ class ShardHandler(object):
         """A helper function to view the mapping data."""
         return self.mapping
 
+    def get_word_at_index(self, index):
+        """Returns the word at a given index and the shard file containing the word"""
+        filename = None
+        shard_num = None
+        keys = self.mapping.keys()
+        for key in keys:
+            first_index = self.mapping[key]['start']
+            last_index = self.mapping[key]['end']
+            if (index >= first_index and index <= last_index):
+                filename = f'./data/{key}.txt'
+                shard_num = key
+        inner_index = index - self.mapping[shard_num]['start']
+        with open(filename, 'r') as shard_file:
+            data = shard_file.read()
+            start_char = data[inner_index]
 
+            while (not start_char.isalpha() and inner_index < len(data) - 1):
+                inner_index += 1
+                start_char = data[inner_index]
 
+            data_fragment = data[inner_index:]
+            data_fragment = data_fragment.replace('\n', ' ').replace('\r', ' ')
+            words = data_fragment.split(' ')
+            word = words[0]
+            while ((data[inner_index - 1] != ' ' and data[inner_index -1] != '\n') and inner_index > 0):
+                word = data[inner_index - 1] + word
+                inner_index -= 1
+
+                if (inner_index == 0 and int(shard_num) > 0):
+                    with open(f'./data/{int(shard_num) - 1}.txt', 'r') as prev_shard:
+                        prev_data = prev_shard.read()
+                        last_fragment = prev_data.split(' ')[-1]
+                        word = last_fragment + word
+            max_shard = max([int(z) for z in self.get_shard_ids()])
+            if len(words) == 1 and int(shard_num) < max_shard:
+                while (data[inner_index].isalpha() and inner_index < len(data) - 1):
+                    inner_index += 1
+                    if inner_index == len(data) - 1:
+                        with open(f'./data/{int(shard_num) + 1}.txt', 'r') as next_file:
+                            next_data = next_file.read()
+                            next_fragment = next_data.split(' ')[0]
+                            word = word + next_fragment
+
+        word = word.replace('\n', '').strip(' ,."?!;:')
+        return (f'The word "{word}" was found at index {index} in {shard_num}.txt')
 
 
 s = ShardHandler()
